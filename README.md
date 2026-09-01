@@ -69,16 +69,6 @@ For Fish:
 source .venv/bin/activate.fish
 ```
 
-If you want a shell-aware wrapper, use the helpers in `scripts/`:
-
-```bash
-source scripts/activate_venv.sh
-```
-
-```fish
-source scripts/activate_venv.fish
-```
-
 Run the demo simulation:
 
 ```bash
