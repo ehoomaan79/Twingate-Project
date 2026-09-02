@@ -6,7 +6,9 @@ import threading
 import time
 import uuid
 from collections import deque
-from typing import Any, Deque, Dict, Optional
+from typing import Deque, Dict, Optional
+
+from .network import VirtualInterface, VirtualNetwork
 
 
 class ZeroTrustClient:
@@ -24,6 +26,10 @@ class ZeroTrustClient:
         self._incoming: Deque[dict] = deque()
         self._lock = threading.Lock()
         self._connected = False
+        self.virtual_ip: Optional[str] = None
+        self.route_table: Dict[str, Dict[str, object]] = {}
+        self.network = VirtualNetwork()
+        self.interface = VirtualInterface(device_id, "10.240.0.0")
 
     def connect(self):
         self.sock = socket.create_connection((self.host, self.port), timeout=5)
@@ -49,6 +55,8 @@ class ZeroTrustClient:
             raise RuntimeError(f"Authentication failed: {response}")
 
         self.token = response["token"]
+        self.virtual_ip = response.get("virtual_ip") or self.network.register_device(self.device_id)
+        self.interface.virtual_ip = self.virtual_ip
         return response
 
     def connect_to_peer(self, peer_id: str):
@@ -64,6 +72,15 @@ class ZeroTrustClient:
         if response.get("type") != "connect_ok":
             raise RuntimeError(f"Peer connection failed: {response}")
         self.channel_id = response["channel_id"]
+        self.virtual_ip = response.get("virtual_ip") or self.virtual_ip
+        self.route_table[peer_id] = response.get("nat_route", {})
+        self.interface.add_route(
+            peer_id,
+            response.get("peer_virtual_ip") or "10.240.0.0",
+            response.get("nat_route", {}).get("relay_host", self.host),
+            response.get("nat_route", {}).get("relay_port", self.port),
+            response.get("nat_route", {}).get("mode", "relay"),
+        )
         return response
 
     def send_message(self, recipient_id: str, payload: str):
@@ -107,10 +124,7 @@ class ZeroTrustClient:
                 item = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if item.get("type") == "peer_data":
-                self._incoming.append(item)
-            else:
-                self._incoming.append(item)
+            self._incoming.append(item)
 
     def _send_command(self, payload: dict) -> dict:
         if self.sock is None:

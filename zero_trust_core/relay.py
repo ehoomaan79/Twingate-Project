@@ -6,15 +6,17 @@ import uuid
 from typing import Dict, Optional
 
 from .auth import AuthManager
+from .network import VirtualNetwork
 
 
 class RelayServer:
-    """A minimal relay that lets clients behind NAT rendezvous and exchange messages."""
+    """Relay broker for identity, policy, NAT-safe routing, and peer forwarding."""
 
     def __init__(self, host: str = "127.0.0.1", port: int = 9000, auth_manager: Optional[AuthManager] = None):
         self.host = host
         self.port = port
         self.auth_manager = auth_manager or AuthManager({})
+        self.network = VirtualNetwork("10.240.0.0/24")
         self.sessions: Dict[str, socket.socket] = {}
         self.pending_connects: Dict[str, str] = {}
         self._lock = threading.Lock()
@@ -75,9 +77,10 @@ class RelayServer:
             except PermissionError as exc:
                 return {"type": "error", "reason": str(exc), "request_id": request_id}
 
+            virtual_ip = self.network.register_device(device_id)
             with self._lock:
                 self.sessions[device_id] = connection
-            return {"type": "auth_ok", "device_id": device_id, "token": token, "request_id": request_id}
+            return {"type": "auth_ok", "device_id": device_id, "token": token, "virtual_ip": virtual_ip, "request_id": request_id}
 
         if message_type == "connect_request":
             device_id = message.get("device_id")
@@ -90,9 +93,21 @@ class RelayServer:
                 if not self.auth_manager.is_allowed(device_id, peer_id):
                     raise PermissionError(f"{device_id} is not allowed to reach {peer_id}")
                 channel_id = self._pair_channel(device_id, peer_id)
+                nat_route = self.network.route(device_id, peer_id, self.host, self.port)
+                peer_virtual_ip = self.network.resolve_private_ip(peer_id)
+                device_virtual_ip = self.network.resolve_private_ip(device_id)
             except Exception as exc:  # pragma: no cover - defensive path
                 return {"type": "error", "reason": str(exc), "request_id": request_id}
-            return {"type": "connect_ok", "device_id": device_id, "peer_id": peer_id, "channel_id": channel_id, "request_id": request_id}
+            return {
+                "type": "connect_ok",
+                "device_id": device_id,
+                "peer_id": peer_id,
+                "channel_id": channel_id,
+                "virtual_ip": device_virtual_ip,
+                "peer_virtual_ip": peer_virtual_ip,
+                "nat_route": nat_route,
+                "request_id": request_id,
+            }
 
         if message_type == "peer_message":
             sender = message.get("sender")
