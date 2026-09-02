@@ -2,77 +2,63 @@
 
 ## Goals
 
-This project models a minimal zero-trust backbone inspired by Twingate-style access control, but without dependency on external vendors or cloud services.
+This project implements a Linux-first, Twingate-inspired zero-trust backbone using independently deployable services. It prioritizes a complete, inspectable control/data-plane foundation over pretending to provide every commercial feature.
 
-The project is intentionally designed as a step-by-step final-year prototype. The goal is not to build a production-grade private access platform, but to demonstrate the central backbone logic behind a zero-trust network in a way that is understandable, testable, and extensible.
+The design focuses on five layers:
 
-The prototype focuses on four core ideas:
-
-1. Device identity
-2. Authorization policy
-3. Relay-based connectivity
-4. Simple peer-to-peer message forwarding
+1. device identity and authentication
+2. authorization and policy enforcement
+3. relay-based NAT-safe connectivity
+4. connector-based private service exposure
+5. Linux-friendly route and tunnel integration
 
 ## Components
 
 ### 1. Authentication layer
 
-The `AuthManager` in `zero_trust_core/auth.py` validates device identity using a challenge-response flow. Each device knows a shared secret and signs a nonce issued by the server.
-
-Once valid, a signed bearer token is issued. The token includes:
-
-- device identifier
-- expiration time
-- authorization scope
+The `AuthManager` validates device identity using challenge-response logic and signed tokens. The token includes expiry and scope metadata so each request can be verified independently.
 
 ### 2. Relay broker
 
-The `RelayServer` in `zero_trust_core/relay.py` acts as the rendezvous point. Clients connect to it even when they are behind NAT.
+The relay tracks authenticated sessions and brokers access between peers without requiring local machine port forwarding. It assigns private virtual addresses and manages route metadata for each allowed connection.
 
-The relay:
+The relay is not the policy database and should not contain the complete network configuration. Its production role is to help a client and connector establish a session; authorization is supplied by controller claims and independently checked by the connector.
 
-- tracks authenticated client sessions
-- verifies token signatures
-- checks access policies
-- assigns a channel identity for a permitted peer relationship
-- forwards messages between authorized peers
+### 3. Connector layer
 
-### 3. Client protocol
+The connector runs on the private side of a deployment, registers with the controller, and exposes configured resource metadata without requiring the resource itself to accept public inbound connections.
 
-The `ZeroTrustClient` in `zero_trust_core/protocol.py` performs:
+Connector deployment is enrollment-token based: an administrator creates a one-time token in the controller, installs it on the private host, and the controller consumes it during registration. The connector resolves private DNS names locally before forwarding traffic.
 
-- relay connection
-- challenge-response authentication
-- peer connection request
-- data exchange over the relay
+### 4. Policy engine
 
-This is intentionally minimal and easy to extend.
+The policy engine evaluates user, device, and resource context. It supports allow-lists, resource ports, MFA enforcement, and trust/compliance checks.
+
+### 5. Tunnel and routing primitives
+
+The project includes AES-GCM session primitives and Linux route command generation. The deployable services currently use a framed relay transport; kernel interface installation and encrypted packet forwarding are separate implementation stages.
+
+The client resource catalog is control-plane functionality. It is not a tunnel and does not expose private DNS records publicly.
 
 ## Trust model
 
-The prototype uses a server-side trust anchor. In a more mature version, this could evolve into:
-
-- certificate-based device identity
-- mutual TLS
-- policy engine with RBAC
-- dynamic device registration
-- signed session records
+The controller is the trust and policy authority. Relays and connectors register their reachable endpoints, clients authenticate, and an access decision must resolve to an available relay and connector before a route is returned.
 
 ## Security concerns
 
-This is a learning prototype, not a hardened deployment. Important limitations include:
+This is not yet a production-grade platform. Important known limitations include:
 
-- no end-to-end encryption yet
-- no certificate rotation or revocation
-- no protection against relay compromise
-- no strong client attestation
+- the controller HTTP API needs administrator authentication and TLS termination before internet exposure
+- the current service transport is not yet a complete encrypted packet tunnel
+- interface routing is Linux-oriented and not generalized across every OS
+- scalability and enterprise policy federation are still limited
 
 ## Future evolution
 
 Planned upgrades include:
 
-- Noise or TLS-based encrypted transport
-- message integrity checks and replay protection
-- packet-level tunneling using UDP or QUIC
-- policy evaluation from explicit rules and identity providers
-- support for remote device groups and service policies
+- full encrypted tunnel transport with robust session key rotation
+- dynamic route management for real kernel interface provisioning
+- production NAT traversal strategies beyond centralized relay mediation
+- enterprise IAM and device compliance integration
+- distributed controller and multi-relay topology

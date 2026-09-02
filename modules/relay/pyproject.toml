@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twingate-relay"
+version = "0.1.0"
+description = "Relay backbone for zero-trust client connectivity"
+requires-python = ">=3.11"

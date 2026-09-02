@@ -1,50 +1,95 @@
+import argparse
 import json
 import socket
 import socketserver
 import threading
+import urllib.request
 import uuid
-from typing import Dict, Optional
+import os
+import tomllib
+import sys
+from pathlib import Path
+from typing import Dict
 
-from .auth import AuthManager
-from .network import VirtualNetwork
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from zero_trust_core.auth import AuthManager, DeviceInfo
+from zero_trust_core.network import VirtualNetwork
+
+
+def load_config(path: str | None) -> dict:
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "rb") as handle:
+        return tomllib.load(handle)
+
+
+def auth_manager_from_config(config: dict) -> AuthManager:
+    devices = {
+        item["device_id"]: DeviceInfo(
+            item["device_id"],
+            item["secret"],
+            set(item.get("allowed_peers", [])),
+        )
+        for item in config.get("devices", [])
+    }
+    return AuthManager(devices)
 
 
 class ReusableTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
 
 
-class RelayServer:
-    """Relay broker for identity, policy, NAT-safe routing, and peer forwarding."""
-
-    def __init__(self, host: str = "127.0.0.1", port: int = 9000, auth_manager: Optional[AuthManager] = None):
+class RelayService:
+    def __init__(self, host: str = "0.0.0.0", port: int = 9000, auth_manager: AuthManager | None = None,
+                 controller_url: str | None = None, relay_id: str = "relay-1"):
         self.host = host
         self.port = port
         self.auth_manager = auth_manager or AuthManager({})
+        self.controller_url = controller_url
+        self.relay_id = relay_id
         self.network = VirtualNetwork("10.240.0.0/24")
         self.sessions: Dict[str, socket.socket] = {}
         self.pending_connects: Dict[str, str] = {}
-        self._lock = threading.Lock()
         self._server = None
         self._closing = False
+        self._lock = threading.Lock()
 
     def start(self):
         if self._server is not None:
             return self
-        self._closing = False
         self._server = ReusableTCPServer((self.host, self.port), RelayTCPHandler)
         self._server.relay = self
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
+        if self.controller_url:
+            self.register_with_controller()
+        print(f"Relay service listening on {self.host}:{self.port}")
         return self
+
+    def register_with_controller(self):
+        if not self.controller_url:
+            return None
+        payload = json.dumps({"relay_id": self.relay_id, "host": self.host, "port": self.port}).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.controller_url.rstrip('/')}/register/relay",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            print(f"Warning: failed to register relay with controller: {exc}")
+            return None
 
     def shutdown(self):
         if self._server is not None:
             self._closing = True
             for connection in list(self.sessions.values()):
-                try:
-                    connection.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
                 try:
                     connection.close()
                 except OSError:
@@ -55,16 +100,11 @@ class RelayServer:
             self._server = None
             self._closing = False
 
-    def serve_forever(self):
-        if self._server is None:
-            self.start()
-        self._server.serve_forever()
-
     def dispatch(self, connection, message: dict) -> dict:
-        message_type = message.get("type")
+        msg_type = message.get("type")
         request_id = message.get("request_id")
 
-        if message_type == "auth_request":
+        if msg_type == "auth_request":
             device_id = message.get("device_id")
             try:
                 nonce = self.auth_manager.challenge_for(device_id)
@@ -72,7 +112,7 @@ class RelayServer:
                 return {"type": "error", "reason": "unknown_device", "request_id": request_id}
             return {"type": "challenge", "device_id": device_id, "nonce": nonce, "request_id": request_id}
 
-        if message_type == "auth_response":
+        if msg_type == "auth_response":
             device_id = message.get("device_id")
             nonce = message.get("nonce")
             signature = message.get("signature")
@@ -80,13 +120,12 @@ class RelayServer:
                 token = self.auth_manager.authenticate(device_id, nonce, signature)
             except PermissionError as exc:
                 return {"type": "error", "reason": str(exc), "request_id": request_id}
-
             virtual_ip = self.network.register_device(device_id)
             with self._lock:
                 self.sessions[device_id] = connection
             return {"type": "auth_ok", "device_id": device_id, "token": token, "virtual_ip": virtual_ip, "request_id": request_id}
 
-        if message_type == "connect_request":
+        if msg_type == "connect_request":
             device_id = message.get("device_id")
             peer_id = message.get("peer_id")
             token = message.get("token")
@@ -100,7 +139,7 @@ class RelayServer:
                 nat_route = self.network.route(device_id, peer_id, self.host, self.port)
                 peer_virtual_ip = self.network.resolve_private_ip(peer_id)
                 device_virtual_ip = self.network.resolve_private_ip(device_id)
-            except Exception as exc:  # pragma: no cover - defensive path
+            except Exception as exc:
                 return {"type": "error", "reason": str(exc), "request_id": request_id}
             return {
                 "type": "connect_ok",
@@ -113,22 +152,14 @@ class RelayServer:
                 "request_id": request_id,
             }
 
-        if message_type == "peer_message":
+        if msg_type == "peer_message":
             sender = message.get("sender")
             recipient = message.get("recipient")
             payload = message.get("payload")
             channel_id = message.get("channel_id")
             if sender not in self.sessions or recipient not in self.sessions:
                 return {"type": "error", "reason": "peer_unreachable", "request_id": request_id}
-
-            forwarded = {
-                "type": "peer_data",
-                "from": sender,
-                "channel_id": channel_id,
-                "payload": payload,
-            }
-            peer_connection = self.sessions[recipient]
-            peer_connection.sendall((json.dumps(forwarded) + "\n").encode("utf-8"))
+            self.sessions[recipient].sendall((json.dumps({"type": "peer_data", "from": sender, "channel_id": channel_id, "payload": payload}) + "\n").encode("utf-8"))
             return {"type": "delivery_ack", "channel_id": channel_id, "request_id": request_id}
 
         return {"type": "error", "reason": "unknown_message_type", "request_id": request_id}
@@ -158,3 +189,38 @@ class RelayTCPHandler(socketserver.StreamRequestHandler):
             self.wfile.write((json.dumps(response) + "\n").encode("utf-8"))
             self.wfile.flush()
         connection.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Start relay service")
+    parser.add_argument("--config", default=None, help="Optional TOML config file path")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=9000)
+    parser.add_argument("--relay-id", default="relay-1")
+    parser.add_argument("--controller-url", default=None)
+    args = parser.parse_args()
+
+    config = load_config(args.config) if args.config else {}
+    service_cfg = config.get("service", {})
+    controller_cfg = config.get("controller", {})
+    host = service_cfg.get("host", args.host)
+    port = int(service_cfg.get("port", args.port))
+    relay_id = service_cfg.get("relay_id", controller_cfg.get("relay_id", args.relay_id))
+    controller_url = controller_cfg.get("url", args.controller_url)
+
+    relay = RelayService(
+        host=host,
+        port=port,
+        auth_manager=auth_manager_from_config(config),
+        controller_url=controller_url,
+        relay_id=relay_id,
+    )
+    relay.start()
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        relay.shutdown()
+
+
+if __name__ == "__main__":
+    main()

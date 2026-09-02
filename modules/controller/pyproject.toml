@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twingate-controller"
+version = "0.1.0"
+description = "Control-plane registry for the Twingate-inspired zero-trust backbone"
+requires-python = ">=3.11"

@@ -1,0 +1,2 @@
+# Install the shared controller/core package from this repository.
+-e ../..

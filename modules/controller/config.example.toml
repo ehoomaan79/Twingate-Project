@@ -1,0 +1,8 @@
+[service]
+host = "0.0.0.0"
+port = 9001
+database_path = "controller.db"
+admin_token = "replace-with-a-long-random-secret"
+# For internet-facing deployments, set both paths and use https:// in module URLs.
+# tls_cert = "/etc/ztna/controller.crt"
+# tls_key = "/etc/ztna/controller.key"

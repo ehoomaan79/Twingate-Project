@@ -29,3 +29,7 @@ Thumbs.db
 
 # Local state
 *.log
+*.db
+config.toml
+*.key
+*.pem

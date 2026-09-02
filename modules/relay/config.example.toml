@@ -1,0 +1,17 @@
+[service]
+host = "0.0.0.0"
+port = 9000
+relay_id = "relay-1"
+
+[controller]
+url = "http://127.0.0.1:9001"
+
+[[devices]]
+device_id = "client-1"
+secret = "change-me"
+allowed_peers = ["connector-1"]
+
+[[devices]]
+device_id = "connector-1"
+secret = "connector-bootstrap-secret"
+allowed_peers = ["client-1"]

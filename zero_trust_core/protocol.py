@@ -9,6 +9,7 @@ from collections import deque
 from typing import Deque, Dict, Optional
 
 from .network import VirtualInterface, VirtualNetwork
+from .tunnel import EncryptedEnvelope
 
 
 class ZeroTrustClient:
@@ -96,6 +97,14 @@ class ZeroTrustClient:
         if response.get("type") != "delivery_ack":
             raise RuntimeError(f"Delivery failed: {response}")
         return response
+
+    def send_encrypted(self, recipient_id: str, payload: bytes, shared_secret: str):
+        envelope = EncryptedEnvelope.seal(payload, shared_secret, self.channel_id.encode("utf-8"))
+        return self.send_message(recipient_id, envelope.ciphertext)
+
+    def decrypt_message(self, message: dict, shared_secret: str) -> bytes:
+        envelope = EncryptedEnvelope(message["payload"])
+        return envelope.open(shared_secret, message["channel_id"].encode("utf-8"))
 
     def receive_message(self, timeout: float = 2.0):
         deadline = time.time() + timeout

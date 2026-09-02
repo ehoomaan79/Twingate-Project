@@ -3,24 +3,26 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zero-trust-relay-demo"
+name = "twingate-zero-trust-backbone"
 version = "0.1.0"
-description = "A minimal zero-trust relay prototype inspired by Twingate-style remote access ideas"
+description = "Modular zero-trust backbone inspired by Twingate-style private access"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Hoomaan Ebrahimi" }]
 license = { text = "MIT" }
-keywords = ["zero-trust", "security", "relay", "networking", "python"]
+keywords = ["zero-trust", "security", "relay", "networking", "python", "ztna"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent",
+  "Operating System :: Linux",
+  "Topic :: Security :: Cryptography",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "cryptography>=42.0.0",
 ]
 
 [tool.pytest.ini_options]

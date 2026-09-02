@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twingate-connector"
+version = "0.1.0"
+description = "Resource connector for a zero-trust private network"
+requires-python = ">=3.11"

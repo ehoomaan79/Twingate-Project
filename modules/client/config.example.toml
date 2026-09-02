@@ -1,0 +1,10 @@
+[service]
+device_id = "client-1"
+user_id = "alice"
+secret = "change-me"
+relay_host = "127.0.0.1"
+relay_port = 9000
+tunnel_secret = "replace-with-a-separate-secret"
+
+[controller]
+url = "http://127.0.0.1:9001"
