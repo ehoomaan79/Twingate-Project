@@ -45,4 +45,6 @@ url = "http://controller.example.com:9001"
 
 Private resource names are not published to public DNS. The controller sends authorized resource metadata to the client, and the connector resolves configured private names inside the remote network. Transparent DNS interception and encrypted packet forwarding are separate data-plane implementation stages.
 
+When opening a resource tunnel, the client connects to the relay data port using the authorized channel and verifies the connector's pinned SHA-256 certificate fingerprint. TLS 1.3 then runs between the client and connector; the relay only copies bytes.
+
 This module is the user-facing client for a Linux workstation or device that needs protected access without direct inbound exposure.

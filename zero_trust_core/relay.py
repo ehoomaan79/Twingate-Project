@@ -11,6 +11,8 @@ from .network import VirtualNetwork
 
 class ReusableTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
+    daemon_threads = True
+    block_on_close = False
 
 
 class RelayServer:

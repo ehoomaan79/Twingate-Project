@@ -49,6 +49,17 @@ Copy the returned one-time `enrollment_token` into the connector configuration. 
 
 The connector also authenticates outbound to the relay using its device secret. The relay must have a matching connector identity in its bootstrap configuration.
 
+Generate a connector certificate for the client to pin:
+
+```bash
+openssl req -x509 -newkey rsa:3072 -nodes \
+	-keyout connector.key -out connector.crt -days 365 \
+	-subj '/CN=connector-1'
+openssl x509 -in connector.crt -outform DER | sha256sum
+```
+
+Configure `tls_cert` and `tls_key` on the connector, and give the resulting SHA-256 fingerprint to the client. The relay does not receive or inspect the certificate handshake.
+
 ## Role
 
 - registers into the controller

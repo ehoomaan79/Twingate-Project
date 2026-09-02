@@ -116,15 +116,26 @@ class ZeroTrustClient:
             time.sleep(0.05)
         raise TimeoutError("No peer message received within timeout")
 
+    def receive_event(self, timeout: float = 2.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._incoming:
+                return self._incoming.popleft()
+            time.sleep(0.05)
+        raise TimeoutError("No relay event received within timeout")
+
     def close(self):
         if self.sock is not None:
             self.sock.close()
             self.sock = None
 
     def _reader_loop(self):
+        reader = self.sock.makefile("r")
         while self.sock is not None:
             try:
-                line = self.sock.makefile("r").readline()
+                line = reader.readline()
+            except socket.timeout:
+                continue
             except (OSError, ValueError):
                 break
             if not line:

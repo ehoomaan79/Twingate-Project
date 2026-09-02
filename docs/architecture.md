@@ -36,7 +36,7 @@ The policy engine evaluates user, device, and resource context. It supports allo
 
 ### 5. Tunnel and routing primitives
 
-The project includes AES-GCM session primitives and Linux route command generation. The deployable services currently use a framed relay transport; kernel interface installation and encrypted packet forwarding are separate implementation stages.
+The project includes AES-GCM session primitives and Linux route command generation. The relay service has a separate tunnel data listener: after authorization, client and connector make outbound connections to it, the relay pairs the channel and copies bytes, and TLS 1.3 is established directly between endpoints with certificate fingerprint pinning. Kernel interface installation and encrypted packet forwarding remain separate implementation stages.
 
 The client resource catalog is control-plane functionality. It is not a tunnel and does not expose private DNS records publicly.
 

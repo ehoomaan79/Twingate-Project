@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import hashlib
+import ssl
 from dataclasses import dataclass
 
 from .encryption import SessionCipher
@@ -24,3 +26,22 @@ class EncryptedEnvelope:
 
     def to_json(self) -> str:
         return json.dumps({"ciphertext": self.ciphertext}, separators=(",", ":"))
+
+
+def certificate_fingerprint(certificate: bytes) -> str:
+    return hashlib.sha256(certificate).hexdigest()
+
+
+def client_tls_context() -> ssl.SSLContext:
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_3
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+def server_tls_context(certfile: str, keyfile: str) -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_3
+    context.load_cert_chain(certfile, keyfile)
+    return context

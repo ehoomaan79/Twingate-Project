@@ -16,6 +16,12 @@ class EnterpriseFeatureTests(unittest.TestCase):
         with self.assertRaises(Exception):
             envelope.open("wrong-secret", b"channel-1")
 
+    def test_client_tls_context_requires_tls_one_three(self):
+        import ssl
+        from zero_trust_core.tunnel import client_tls_context
+
+        self.assertEqual(client_tls_context().minimum_version, ssl.TLSVersion.TLSv1_3)
+
     def test_resource_alias_and_private_fqdn_match_without_public_dns(self):
         resources = [{"resource_id": "db", "address": "db.internal", "aliases": {"database.home"}}]
 

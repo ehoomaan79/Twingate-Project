@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import socket
+import ssl
 import threading
 import time
 import tomllib
@@ -21,6 +22,7 @@ if str(ROOT) not in sys.path:
 from zero_trust_core.network import VirtualInterface, VirtualNetwork
 from zero_trust_core.dns import find_resource
 from zero_trust_core.tunnel import EncryptedEnvelope
+from zero_trust_core.tunnel import certificate_fingerprint, client_tls_context
 
 
 def load_config(path: str | None) -> dict:
@@ -40,6 +42,7 @@ class ClientService:
         self.controller_url = controller_url
         self.user_id = user_id or device_id
         self.controller_token = None
+        self.tunnel_socket = None
         self.token = None
         self.virtual_ip = None
         self.channel_id = None
@@ -184,10 +187,34 @@ class ClientService:
     def decrypt_message(self, message: dict, shared_secret: str) -> bytes:
         return EncryptedEnvelope(message["payload"]).open(shared_secret, message["channel_id"].encode("utf-8"))
 
+    def close(self):
+        for connection in (self.tunnel_socket, self.sock):
+            if connection is not None:
+                try:
+                    connection.close()
+                except OSError:
+                    pass
+        self.tunnel_socket = None
+        self.sock = None
+
+    def open_tls_tunnel(self, peer_id: str, server_fingerprint: str):
+        route = self.connect_to_peer(peer_id)
+        tunnel = socket.create_connection((self.relay_host, route["data_port"]), timeout=5)
+        tunnel.sendall((json.dumps({"channel_id": route["channel_id"], "tunnel_token": route["tunnel_token"]}) + "\n").encode("utf-8"))
+        tls_socket = client_tls_context().wrap_socket(tunnel, server_hostname=peer_id)
+        if certificate_fingerprint(tls_socket.getpeercert(binary_form=True)) != server_fingerprint:
+            tls_socket.close()
+            raise ssl.SSLError("Connector certificate fingerprint mismatch")
+        self.tunnel_socket = tls_socket
+        return tls_socket
+
     def _reader_loop(self):
+        reader = self.sock.makefile("r")
         while self.sock is not None:
             try:
-                line = self.sock.makefile("r").readline()
+                line = reader.readline()
+            except socket.timeout:
+                continue
             except (OSError, ValueError):
                 break
             if not line:

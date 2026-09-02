@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import socket
+import ssl
 import threading
 import tomllib
 import urllib.request
@@ -14,12 +15,14 @@ if str(ROOT) not in sys.path:
 
 from zero_trust_core.dns import resolve_with_local_dns
 from zero_trust_core.protocol import ZeroTrustClient
+from zero_trust_core.tunnel import server_tls_context
 
 
 class ConnectorService:
     def __init__(self, host: str = "0.0.0.0", port: int = 9100, resource_ip: str = "10.240.1.10",
                  controller_url: str | None = None, connector_id: str = "connector-1", enrollment_token: str | None = None,
-                 relay_host: str | None = None, relay_port: int = 9000, secret: str | None = None):
+                 relay_host: str | None = None, relay_port: int = 9000, secret: str | None = None,
+                 tls_cert: str | None = None, tls_key: str | None = None):
         self.host = host
         self.port = port
         self.resource_ip = resource_ip
@@ -29,6 +32,8 @@ class ConnectorService:
         self.relay_host = relay_host
         self.relay_port = relay_port
         self.secret = secret
+        self.tls_cert = tls_cert
+        self.tls_key = tls_key
         self.relay_client = None
         self._server = None
         self._closing = False
@@ -47,6 +52,8 @@ class ConnectorService:
         if self.relay_host and self.secret:
             self.relay_client = ZeroTrustClient(self.connector_id, self.secret, self.relay_host, self.relay_port)
             self.relay_client.connect().login()
+            self._relay_thread = threading.Thread(target=self._relay_events, daemon=True)
+            self._relay_thread.start()
             print(f"Connector {self.connector_id} authenticated to relay")
         print(f"Connector service listening on {self.host}:{self.port}")
         return self
@@ -104,6 +111,27 @@ class ConnectorService:
         finally:
             conn.close()
 
+    def accept_tls_offer(self, message: dict, certfile: str, keyfile: str):
+        tunnel = socket.create_connection((self.relay_host, message["data_port"]), timeout=5)
+        tunnel.sendall((json.dumps({"channel_id": message["channel_id"], "tunnel_token": message["tunnel_token"]}) + "\n").encode("utf-8"))
+        return server_tls_context(certfile, keyfile).wrap_socket(tunnel, server_side=True)
+
+    def _relay_events(self):
+        while not self._closing and self.relay_client is not None:
+            try:
+                event = self.relay_client.receive_event(timeout=1)
+            except TimeoutError:
+                continue
+            if event.get("type") != "peer_data":
+                continue
+            try:
+                offer = json.loads(event.get("payload", "{}"))
+                if offer.get("type") == "tunnel_offer" and self.tls_cert and self.tls_key:
+                    secure = self.accept_tls_offer({**event, **offer}, self.tls_cert, self.tls_key)
+                    secure.close()
+            except (OSError, ValueError, ssl.SSLError):
+                continue
+
 
 def load_config(path: str | None) -> dict:
     if not path or not os.path.exists(path):
@@ -138,11 +166,14 @@ def main():
     relay_host = service_cfg.get("relay_host", args.relay_host)
     relay_port = int(service_cfg.get("relay_port", args.relay_port))
     secret = service_cfg.get("secret", args.secret)
+    tls_cert = service_cfg.get("tls_cert")
+    tls_key = service_cfg.get("tls_key")
 
     connector = ConnectorService(host=host, port=port, resource_ip=resource_ip,
                                 controller_url=controller_url, connector_id=connector_id,
                                 enrollment_token=enrollment_token, relay_host=relay_host,
-                                relay_port=relay_port, secret=secret)
+                                relay_port=relay_port, secret=secret, tls_cert=tls_cert,
+                                tls_key=tls_key)
     connector.start()
     try:
         threading.Event().wait()

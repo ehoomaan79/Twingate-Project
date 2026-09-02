@@ -45,6 +45,8 @@ allowed_peers = ["connector-1"]
 - checks whether a device is allowed to reach another peer
 - returns NAT-safe route metadata for authorized sessions
 
+Open both `port` and `data_port` on the relay host. The control port carries authentication and pairing metadata; the data port only forwards the already-encrypted TLS byte stream.
+
 The `devices` entries are the relay's bootstrap identity registry. In the next security stage these credentials will be replaced with controller-issued device credentials; never commit real secrets to a public repository.
 
 This is the module that should run on a public or internet-reachable server so devices can connect without opening inbound local ports.
