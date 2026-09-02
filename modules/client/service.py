@@ -147,7 +147,7 @@ class ClientService:
         """Resolve a local alias, private FQDN, IP, or CIDR destination to a catalog entry."""
         return find_resource(resources, destination)
 
-    def connect_to_peer(self, peer_id: str):
+    def connect_to_peer(self, peer_id: str, *, tunnel_metadata: dict | None = None):
         if self.token is None:
             raise RuntimeError("Client must authenticate before requesting a peer connection")
 
@@ -156,6 +156,7 @@ class ClientService:
             "device_id": self.device_id,
             "peer_id": peer_id,
             "token": self.token,
+            "tunnel_metadata": tunnel_metadata or {},
         })
         if response.get("type") != "connect_ok":
             raise RuntimeError(f"Peer connection failed: {response}")
@@ -199,6 +200,30 @@ class ClientService:
 
     def open_tls_tunnel(self, peer_id: str, server_fingerprint: str):
         route = self.connect_to_peer(peer_id)
+        tunnel = socket.create_connection((self.relay_host, route["data_port"]), timeout=5)
+        tunnel.sendall((json.dumps({"channel_id": route["channel_id"], "tunnel_token": route["tunnel_token"]}) + "\n").encode("utf-8"))
+        tls_socket = client_tls_context().wrap_socket(tunnel, server_hostname=peer_id)
+        if certificate_fingerprint(tls_socket.getpeercert(binary_form=True)) != server_fingerprint:
+            tls_socket.close()
+            raise ssl.SSLError("Connector certificate fingerprint mismatch")
+        self.tunnel_socket = tls_socket
+        return tls_socket
+
+    def open_resource_tunnel(self, resource: dict, port: int, server_fingerprint: str):
+        """Authorize a catalog resource, then open TLS to its connector."""
+        if self.controller_url:
+            self.request_resource(self.user_id, resource["resource_id"], port)
+        connector = resource.get("connector_id") or resource.get("connector", {}).get("connector_id")
+        if not connector:
+            raise RuntimeError("Resource has no connector assignment")
+        return self.open_tls_tunnel_with_metadata(
+            connector,
+            server_fingerprint,
+            {"resource_address": resource.get("address", ""), "resource_port": port},
+        )
+
+    def open_tls_tunnel_with_metadata(self, peer_id: str, server_fingerprint: str, metadata: dict):
+        route = self.connect_to_peer(peer_id, tunnel_metadata=metadata)
         tunnel = socket.create_connection((self.relay_host, route["data_port"]), timeout=5)
         tunnel.sendall((json.dumps({"channel_id": route["channel_id"], "tunnel_token": route["tunnel_token"]}) + "\n").encode("utf-8"))
         tls_socket = client_tls_context().wrap_socket(tunnel, server_hostname=peer_id)

@@ -15,6 +15,7 @@ The architecture is intentionally simple and understandable for a final-year pro
 
 - no inbound ports on protected devices
 - relay-based connectivity over a trusted backbone
+- TLS 1.3 client-to-connector tunnels carried through a relay byte bridge
 - user and group authorization checks
 - private virtual addressing for protected resources
 - easy per-module deployment and configuration
@@ -147,6 +148,7 @@ This is a solid foundational zero-trust backbone and a practical final-year proj
 
 - persistent database backend for controller state
 - real end-to-end encrypted tunnel traffic
+- transparent TCP resource forwarding through connector-side private networks
 - better NAT traversal and relay failover
 - real Linux kernel route installation and policy enforcement
 

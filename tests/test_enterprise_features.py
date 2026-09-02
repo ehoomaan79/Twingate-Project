@@ -1,3 +1,4 @@
+import threading
 import unittest
 
 from zero_trust_core.encryption import SessionCipher
@@ -21,6 +22,23 @@ class EnterpriseFeatureTests(unittest.TestCase):
         from zero_trust_core.tunnel import client_tls_context
 
         self.assertEqual(client_tls_context().minimum_version, ssl.TLSVersion.TLSv1_3)
+
+    def test_connector_bridge_forwards_bytes_in_both_directions(self):
+        import socket
+        import time
+        from modules.connector.service import ConnectorService
+
+        left, right = socket.socketpair()
+        threading.Thread(target=ConnectorService._bridge, args=(left, right), daemon=True).start()
+        left.settimeout(2)
+        right.settimeout(2)
+        left.sendall(b"to-private-service")
+        self.assertEqual(right.recv(1024), b"to-private-service")
+        right.sendall(b"to-client")
+        self.assertEqual(left.recv(1024), b"to-client")
+        left.close()
+        right.close()
+        time.sleep(0.01)
 
     def test_resource_alias_and_private_fqdn_match_without_public_dns(self):
         resources = [{"resource_id": "db", "address": "db.internal", "aliases": {"database.home"}}]

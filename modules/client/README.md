@@ -43,7 +43,7 @@ url = "http://controller.example.com:9001"
 - receives the authorized resource catalog, including private FQDN/IP addresses and DNS servers
 - uses the tunnel path defined by the relay and controller policy
 
-Private resource names are not published to public DNS. The controller sends authorized resource metadata to the client, and the connector resolves configured private names inside the remote network. Transparent DNS interception and encrypted packet forwarding are separate data-plane implementation stages.
+Private resource names are not published to public DNS. The controller sends authorized resource metadata to the client, and the connector resolves configured private names inside the remote network. The current client API opens a TLS 1.3 stream for a selected TCP resource; transparent OS-wide DNS interception and UDP support are separate extensions.
 
 When opening a resource tunnel, the client connects to the relay data port using the authorized channel and verifies the connector's pinned SHA-256 certificate fingerprint. TLS 1.3 then runs between the client and connector; the relay only copies bytes.
 

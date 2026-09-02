@@ -114,7 +114,38 @@ class ConnectorService:
     def accept_tls_offer(self, message: dict, certfile: str, keyfile: str):
         tunnel = socket.create_connection((self.relay_host, message["data_port"]), timeout=5)
         tunnel.sendall((json.dumps({"channel_id": message["channel_id"], "tunnel_token": message["tunnel_token"]}) + "\n").encode("utf-8"))
-        return server_tls_context(certfile, keyfile).wrap_socket(tunnel, server_side=True)
+        secure = server_tls_context(certfile, keyfile).wrap_socket(tunnel, server_side=True)
+        target_host = message.get("resource_address") or self.resource_ip
+        target_port = int(message.get("resource_port", 443))
+        try:
+            target = socket.create_connection((target_host, target_port), timeout=5)
+        except OSError:
+            secure.close()
+            raise
+        threading.Thread(target=self._bridge, args=(secure, target), daemon=True).start()
+        return secure
+
+    @staticmethod
+    def _bridge(left, right):
+        def copy(source, destination):
+            try:
+                while True:
+                    data = source.recv(65536)
+                    if not data:
+                        break
+                    destination.sendall(data)
+            except OSError:
+                pass
+            finally:
+                try:
+                    destination.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+
+        threading.Thread(target=copy, args=(right, left), daemon=True).start()
+        copy(left, right)
+        left.close()
+        right.close()
 
     def _relay_events(self):
         while not self._closing and self.relay_client is not None:
@@ -127,8 +158,7 @@ class ConnectorService:
             try:
                 offer = json.loads(event.get("payload", "{}"))
                 if offer.get("type") == "tunnel_offer" and self.tls_cert and self.tls_key:
-                    secure = self.accept_tls_offer({**event, **offer}, self.tls_cert, self.tls_key)
-                    secure.close()
+                    self.accept_tls_offer({**event, **offer}, self.tls_cert, self.tls_key)
             except (OSError, ValueError, ssl.SSLError):
                 continue
 

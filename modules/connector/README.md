@@ -60,6 +60,8 @@ openssl x509 -in connector.crt -outform DER | sha256sum
 
 Configure `tls_cert` and `tls_key` on the connector, and give the resulting SHA-256 fingerprint to the client. The relay does not receive or inspect the certificate handshake.
 
+For a resource tunnel, the connector receives the authorized resource address and port in the paired offer, resolves the address with its local resolver, opens the private TCP connection, and forwards bytes between that connection and the client TLS stream.
+
 ## Role
 
 - registers into the controller

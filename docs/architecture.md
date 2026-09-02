@@ -49,7 +49,7 @@ The controller is the trust and policy authority. Relays and connectors register
 This is not yet a production-grade platform. Important known limitations include:
 
 - the controller HTTP API needs administrator authentication and TLS termination before internet exposure
-- the current service transport is not yet a complete encrypted packet tunnel
+- transparent TCP/UDP proxying and kernel interception are still being expanded beyond the current TLS stream API
 - interface routing is Linux-oriented and not generalized across every OS
 - scalability and enterprise policy federation are still limited
 

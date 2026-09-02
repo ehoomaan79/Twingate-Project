@@ -165,7 +165,7 @@ class RelayService:
                         "type": "peer_data",
                         "from": device_id,
                         "channel_id": channel_id,
-                        "payload": json.dumps({"type": "tunnel_offer", "tunnel_token": tunnel_token, "data_port": self.data_port}),
+                        "payload": json.dumps({"type": "tunnel_offer", "tunnel_token": tunnel_token, "data_port": self.data_port, **message.get("tunnel_metadata", {})}),
                     }) + "\n").encode("utf-8"))
                 nat_route = self.network.route(device_id, peer_id, self.host, self.port)
                 peer_virtual_ip = self.network.resolve_private_ip(peer_id)
