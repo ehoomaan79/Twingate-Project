@@ -5,8 +5,11 @@ import secrets
 import ssl
 import tomllib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from .database import ControllerDatabase
+
+WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 
 
 class ControllerService:
@@ -72,8 +75,17 @@ class ControllerService:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path == "/admin":
-                    self._send_html(ADMIN_HTML)
+                    self._send_file("admin.html", "text/html; charset=utf-8")
                     return
+                if self.path == "/client":
+                    self._send_file("client.html", "text/html; charset=utf-8")
+                    return
+                if self.path.startswith("/static/"):
+                    filename = self.path.removeprefix("/static/")
+                    if filename in {"styles.css", "admin.js", "client.js"}:
+                        content_type = "text/css" if filename.endswith(".css") else "application/javascript"
+                        self._send_file(filename, content_type)
+                        return
                 if self.path == "/health":
                     self._send_json({"status": "ok", "topology": controller.topology()})
                     return
@@ -190,6 +202,22 @@ class ControllerService:
                 encoded = content.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def _send_file(self, filename, content_type):
+                path = (WEB_ROOT / filename).resolve()
+                if WEB_ROOT not in path.parents:
+                    self._send_json({"status": "not_found"}, status=404)
+                    return
+                try:
+                    encoded = path.read_bytes()
+                except OSError:
+                    self._send_json({"status": "not_found"}, status=404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(encoded)))
                 self.end_headers()
                 self.wfile.write(encoded)
