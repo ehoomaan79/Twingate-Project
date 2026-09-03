@@ -1,6 +1,8 @@
 import threading
 import unittest
 
+from modules.client.service import ClientService
+
 from zero_trust_core.encryption import SessionCipher
 from zero_trust_core.dns import find_resource
 from zero_trust_core.tunnel import EncryptedEnvelope
@@ -45,6 +47,24 @@ class EnterpriseFeatureTests(unittest.TestCase):
 
         self.assertEqual(find_resource(resources, "database.home")["resource_id"], "db")
         self.assertEqual(find_resource(resources, "db.internal")["resource_id"], "db")
+
+    def test_client_only_intercepts_acl_matches_and_leaves_other_traffic_local(self):
+        resources = [{
+            "resource_id": "db",
+            "address": "db.internal",
+            "aliases": {"database.home"},
+            "allowed_ports": {5432},
+            "allowed_protocols": {"tcp"},
+        }]
+
+        protected = ClientService.interception_decision(resources, "database.home", 5432, "tcp")
+        ordinary = ClientService.interception_decision(resources, "public.example", 443, "tcp")
+        blocked = ClientService.interception_decision(resources, "db.internal", 443, "tcp")
+
+        self.assertTrue(protected["intercept"])
+        self.assertEqual(protected["route"], "tunnel")
+        self.assertEqual(ordinary, {"intercept": False, "route": "local", "reason": "not_in_acl"})
+        self.assertEqual(blocked["route"], "blocked")
 
     def test_session_cipher_encrypts_and_decrypts_message(self):
         cipher = SessionCipher.from_shared_secret("demo-secret", salt=b"enterprise-demo")

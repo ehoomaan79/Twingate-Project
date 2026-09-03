@@ -18,6 +18,7 @@ The architecture is intentionally simple and understandable for a final-year pro
 - TLS 1.3 client-to-connector tunnels carried through a relay byte bridge
 - user and group authorization checks
 - private virtual addressing for protected resources
+- split tunneling: only ACL-matched resources enter the tunnel
 - easy per-module deployment and configuration
 
 ## Repository layout
@@ -127,7 +128,8 @@ python service.py --config config.toml
 3. Configure the connector with its controller URL, connector ID, resource IP, and private resource address.
 4. Launch the client with the relay host information and device secret.
 5. The client authenticates to the relay, registers with the controller, and receives its authorized resource catalog.
-6. A resource request is resolved by the controller and can proceed only when user, group, device, port, relay, and connector checks succeed.
+6. For every new flow, the client matches the destination address, alias/domain, port, and protocol against that catalog.
+7. Only an authorized match enters the client-to-connector tunnel. Other traffic follows the normal local network route; denied matches are blocked.
 
 This makes the controller the main brain for access decisions, while the relay and connector simply provide the runtime path for traffic and session routing.
 

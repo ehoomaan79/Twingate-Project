@@ -22,6 +22,8 @@ The `AuthManager` validates device identity using challenge-response logic and s
 
 The relay tracks authenticated sessions and brokers access between peers without requiring local machine port forwarding. It assigns private virtual addresses and manages route metadata for each allowed connection.
 
+The client is split-tunnel by design. It evaluates each destination against its controller-signed resource ACL. Only matching address/alias/domain, port, and protocol flows are sent to a connector; unrelated traffic never enters the relay or tunnel.
+
 The relay is not the policy database and should not contain the complete network configuration. Its production role is to help a client and connector establish a session; authorization is supplied by controller claims and independently checked by the connector.
 
 ### 3. Connector layer

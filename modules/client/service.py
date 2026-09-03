@@ -147,6 +147,18 @@ class ClientService:
         """Resolve a local alias, private FQDN, IP, or CIDR destination to a catalog entry."""
         return find_resource(resources, destination)
 
+    @classmethod
+    def interception_decision(cls, resources: list[dict], destination: str, port: int, protocol: str = "tcp") -> dict:
+        """Return whether this flow belongs to the split tunnel ACL."""
+        resource = cls.match_resource(resources, destination)
+        if resource is None:
+            return {"intercept": False, "route": "local", "reason": "not_in_acl"}
+        if port not in resource.get("allowed_ports", {443}):
+            return {"intercept": False, "route": "blocked", "reason": "port_not_allowed", "resource_id": resource["resource_id"]}
+        if protocol.lower() not in {item.lower() for item in resource.get("allowed_protocols", {"tcp", "udp"})}:
+            return {"intercept": False, "route": "blocked", "reason": "protocol_not_allowed", "resource_id": resource["resource_id"]}
+        return {"intercept": True, "route": "tunnel", "resource": resource, "resource_id": resource["resource_id"]}
+
     def connect_to_peer(self, peer_id: str, *, tunnel_metadata: dict | None = None):
         if self.token is None:
             raise RuntimeError("Client must authenticate before requesting a peer connection")
